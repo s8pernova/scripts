@@ -69,6 +69,19 @@ school_dir() {
     printf '%04d-%04d-school-board\n' "$start" "$end"
 }
 
+valid_date_parts() {
+    y="$1"
+    m="$(printf '%s' "$2" | sed 's/^0*//')"
+    d="$(printf '%s' "$3" | sed 's/^0*//')"
+
+    [ -n "$m" ] || m=0
+    [ -n "$d" ] || d=0
+
+    [ "$y" -ge 2000 ] && [ "$y" -le 2099 ] &&
+    [ "$m" -ge 1 ] && [ "$m" -le 12 ] &&
+    [ "$d" -ge 1 ] && [ "$d" -le 31 ]
+}
+
 extract_date() {
     base="$1"
 
@@ -78,18 +91,20 @@ extract_date() {
         rest="${ymd#*-}"
         m="${rest%%-*}"
         d="${rest#*-}"
+        valid_date_parts "$y" "$m" "$d" || return 1
         mp="$(pad2 "$m")"
         dp="$(pad2 "$d")"
         printf 'name|%s-%s-%s|%s|%s|%s\n' "$y" "$mp" "$dp" "$y" "$mp" "$dp"
         return 0
     fi
 
-	mdy4="$(printf '%s\n' "$base" | grep -Eo '(^|[^0-9])[01]?[0-9]-[0-3]?[0-9]-[12][0-9]{3}([^0-9]|$)' | head -n 1 | sed 's/^[^0-9]//; s/[^0-9]$//' || true)"
+    mdy4="$(printf '%s\n' "$base" | grep -Eo '(^|[^0-9])[01]?[0-9]-[0-3]?[0-9]-[12][0-9]{3}([^0-9]|$)' | head -n 1 | sed 's/^[^0-9]//; s/[^0-9]$//' || true)"
     if [ -n "$mdy4" ]; then
         m="${mdy4%%-*}"
         rest="${mdy4#*-}"
         d="${rest%%-*}"
         y="${rest#*-}"
+        valid_date_parts "$y" "$m" "$d" || return 1
         mp="$(pad2 "$m")"
         dp="$(pad2 "$d")"
         printf 'name|%s-%s-%s|%s|%s|%s\n' "$y" "$mp" "$dp" "$y" "$mp" "$dp"
@@ -103,6 +118,7 @@ extract_date() {
         d="${rest%%-*}"
         yy="${rest#*-}"
         y=$((2000 + yy))
+        valid_date_parts "$y" "$m" "$d" || return 1
         mp="$(pad2 "$m")"
         dp="$(pad2 "$d")"
         printf 'name|%s-%s-%s|%s|%s|%s\n' "$y" "$mp" "$dp" "$y" "$mp" "$dp"
@@ -114,6 +130,12 @@ extract_date() {
 
 find "$ROOT" -maxdepth 1 -type f | while IFS= read -r f; do
     base="${f##*/}"
+
+    if [ ! -s "$f" ]; then
+        printf '%s -> zero-byte file\n' "$f" >> "$MANUAL"
+        printf 'manual\tzero-byte\t\t\t%s\n' "$f" >> "$PLAN"
+        continue
+    fi
 
     info="$(extract_date "$base" || true)"
     if [ -z "$info" ]; then
@@ -137,6 +159,13 @@ find "$ROOT" -maxdepth 1 -type f | while IFS= read -r f; do
     if [ ! -d "$dest" ]; then
         printf '%s -> missing folder %s\n' "$f" "$dest" >> "$MANUAL"
         printf 'manual\t%s\t%s\t%s\t%s\n' "$source" "$event_date" "$dest" "$f" >> "$PLAN"
+        continue
+    fi
+
+    target="$dest/$base"
+    if [ -e "$target" ]; then
+        printf '%s -> target already exists: %s\n' "$f" "$target" >> "$MANUAL"
+        printf 'manual\tconflict\t%s\t%s\t%s\n' "$event_date" "$dest" "$f" >> "$PLAN"
         continue
     fi
 
