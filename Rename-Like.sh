@@ -1,4 +1,3 @@
-cat > Rename-Like.sh <<'EOF'
 #!/bin/sh
 set -eu
 
