@@ -10,16 +10,16 @@ INSTALL_TIMEOUT=180
 
 usage() {
   echo "Usage:"
-  echo "  ./Codex-Launcher.sh [-d NVM_DIR] [-c CACHE_DIR] [-h]"
+  echo "  ./codex-launcher.sh [-d NVM_DIR] [-c CACHE_DIR] [-h]"
   echo
   echo "Defaults:"
   echo "  NVM_DIR=$NVM_DIR"
   echo "  CACHE_DIR=$CACHE_DIR"
   echo
   echo "Examples:"
-  echo "  ./Codex-Launcher.sh"
-  echo "  ./Codex-Launcher.sh -d /opt/nvm"
-  echo "  ./Codex-Launcher.sh -c /tmp/codex-cache"
+  echo "  ./codex-launcher.sh"
+  echo "  ./codex-launcher.sh -d /opt/nvm"
+  echo "  ./codex-launcher.sh -c /tmp/codex-cache"
   exit 1
 }
 
