@@ -8,7 +8,7 @@ LOCK_TIMEOUT=5
 UPDATE_TIMEOUT=20
 INSTALL_TIMEOUT=180
 
-# Load the user's NVM-managed Node installation.
+# Load NVM-managed Node installation
 if [[ -s "$NVM_DIR/nvm.sh" ]]; then
     # shellcheck source=/dev/null
     source "$NVM_DIR/nvm.sh"
@@ -63,8 +63,8 @@ update_codex() {
         --no-fund
 }
 
-# Run the update before starting Codex.
-# Failures are logged, then the currently installed version is started.
+# Run the update before starting Codex
+# Failures are logged, then the currently installed version is started
 (
     flock -w "$LOCK_TIMEOUT" 9 || exit 0
     update_codex
