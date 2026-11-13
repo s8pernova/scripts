@@ -11,11 +11,13 @@ param(
     [Parameter(Mandatory, Position = 1)] [string] $OutputDirectory,
     [ValidateRange(1, 16)] [int] $Concurrency = 6,
     [ValidateRange(5, 600)] [int] $TimeoutSeconds = 60,
+    [ValidateRange(0, 4)] [int] $NetworkRetries = 2,
     [string] $YtDlpPath = 'yt-dlp',
     [string] $FfmpegPath = 'ffmpeg',
     [string] $FfprobePath = 'ffprobe',
     [string] $DenoPath = 'deno',
-    [switch] $ValidateOnly
+    [switch] $ValidateOnly,
+    [switch] $StopOnError
 )
 
 Set-StrictMode -Version Latest
@@ -169,31 +171,47 @@ try {
     $started = [DateTimeOffset]::UtcNow.ToString('o')
 
     function Show-QueueProgress([string] $Activity = 'Downloading MP3 queue') {
-        Write-Progress -Id 1 -Activity $Activity -Status "$completed / $($tracks.Count) songs in folder; $($active.Count) downloading" -PercentComplete (100 * $completed / $tracks.Count)
+        $failureCount = @($tracks | Where-Object Status -eq 'failed').Count
+        Write-Progress -Id 1 -Activity $Activity -Status "$completed / $($tracks.Count) songs in folder; $failureCount failed; $($active.Count) downloading" -PercentComplete (100 * $completed / $tracks.Count)
     }
     function Save-QueueStatus([string] $Phase) {
         $report = [ordered]@{ phase = $Phase; started = $started; updated = [DateTimeOffset]::UtcNow.ToString('o')
             completed = $completed; total = $tracks.Count; downloaded = $downloaded; existing = $skipped
             destination = $destination; tracks = @($tracks | Select-Object Number, Title, Artist, Url, Path, Status, Error, Log) }
         [IO.File]::WriteAllText($statusPath, ($report | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+        $failedQueue = @($tracks | Where-Object Status -eq 'failed' | ForEach-Object {
+            $item = [ordered]@{ url = $_.Url; title = $_.Title; artist = $_.Artist; album = $_.Album; genre = $_.Genre }
+            if ($null -ne $_.Duration) { $item.duration_seconds = $_.Duration }
+            $item
+        })
+        [IO.File]::WriteAllText((Join-Path $stateDirectory 'failed.json'), (ConvertTo-Json -InputObject $failedQueue -Depth 4), [Text.UTF8Encoding]::new($false))
     }
+    Save-QueueStatus 'checking_existing'
     foreach ($track in $tracks) {
         Show-QueueProgress 'Checking existing MP3s'
         if (Test-Path -LiteralPath $track.Path) {
-            Assert-Mp3 $track $probe $childPath
-            $track.Status = 'existing'; $completed++; $skipped++
+            try {
+                Assert-Mp3 $track $probe $childPath
+                $track.Status = 'existing'; $completed++; $skipped++
+            } catch {
+                $failed = $true; $track.Status = 'failed'; $track.Error = $_.Exception.Message
+                Write-Host "Failed: $($track.Title): $($track.Error)" -ForegroundColor Red
+                if ($StopOnError) { Save-QueueStatus 'stopped_on_error'; throw }
+            }
         } else { $pending.Enqueue($track) }
     }
     Save-QueueStatus 'downloading'
     while ($pending.Count -gt 0 -or $active.Count -gt 0) {
-        while (!$failed -and $pending.Count -gt 0 -and $active.Count -lt $Concurrency) {
+        while ((!$StopOnError -or !$failed) -and $pending.Count -gt 0 -and $active.Count -lt $Concurrency) {
             $track = $pending.Dequeue()
             $tags = 'Metadata+ffmpeg_o:-id3v2_version 3 -metadata title=' + (Quote-Metadata $track.Title) +
                 ' -metadata artist=' + (Quote-Metadata $track.Artist) + ' -metadata album=' +
                 (Quote-Metadata $track.Album) + ' -metadata genre=' + (Quote-Metadata $track.Genre)
             $template = (Join-Path $destination $track.Stem).Replace('%', '%%') + '.%(ext)s'
-            $arguments = @('--ignore-config', '--no-playlist', '--no-progress', '--no-overwrites',
-                '--retries', '0', '--extractor-retries', '0', '--fragment-retries', '0',
+            $arguments = @('--ignore-config', '--no-playlist', '--no-progress', '--no-overwrites', '--abort-on-unavailable-fragments',
+                '--retries', [string]$NetworkRetries, '--extractor-retries', [string]$NetworkRetries,
+                '--fragment-retries', [string]$NetworkRetries, '--retry-sleep', 'http:exp=2:10',
+                '--retry-sleep', 'extractor:exp=2:10', '--retry-sleep', 'fragment:exp=2:10',
                 '--socket-timeout', [string]$TimeoutSeconds, '--js-runtimes', "deno:$deno",
                 '--ffmpeg-location', $ffmpeg, '-f', 'bestaudio', '-x', '--audio-format', 'mp3',
                 '--audio-quality', '0', '--embed-metadata', '--postprocessor-args', $tags, '-o', $template, '--', $track.Url)
@@ -218,16 +236,17 @@ try {
                 $failed = $true; $track.Status = 'failed'; $track.Error = $_.Exception.Message
                 Write-Host "Failed: $($track.Title): $($track.Error)" -ForegroundColor Red
             } finally { $active.Remove($job) | Out-Null; $job.Process.Dispose() }
-            Save-QueueStatus $(if ($failed) { 'stopped_on_error' } else { 'downloading' })
+            Save-QueueStatus $(if ($failed -and $StopOnError) { 'stopped_on_error' } else { 'downloading' })
         }
         Show-QueueProgress
-        if ($failed -and $active.Count -eq 0) { break }
+        if ($failed -and $StopOnError -and $active.Count -eq 0) { break }
         if ($active.Count -gt 0) { Start-Sleep -Milliseconds 200 }
     }
-    Save-QueueStatus $(if ($failed) { 'stopped_on_error' } else { 'complete' })
+    Save-QueueStatus $(if ($failed -and $StopOnError) { 'stopped_on_error' } elseif ($failed) { 'completed_with_errors' } else { 'complete' })
     Write-Host "$completed / $($tracks.Count) songs in folder ($downloaded downloaded, $skipped already present)."
     Write-Host "Status: $statusPath"
-    if ($failed) { Write-Host 'Stopped scheduling new downloads after the error; inspect the log before retrying.'; exit 1 }
+    Write-Host "Failed-only queue: $(Join-Path $stateDirectory 'failed.json')"
+    if ($failed) { Write-Host 'Some tracks failed; inspect status.json and the per-track logs before retrying.'; exit 1 }
 } catch {
     Write-Host $_.Exception.Message -ForegroundColor Red
     exit 1
