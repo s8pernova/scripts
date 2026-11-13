@@ -1,12 +1,12 @@
 # YouTube MP3 queue
 
-Requires **PowerShell 7.2+**, **yt-dlp**, **FFmpeg/ffprobe**, and **Deno** on PATH.
+Requires **PowerShell 7.2+**, **yt-dlp**, **FFmpeg/ffprobe**, and **Deno** on PATH. Installed tools are found automatically; no app-specific runtime paths are needed.
 
 ```powershell
-pwsh .\youtube-mp3\Download-YouTubeMp3.ps1 .\queue.json 'C:\Music\Pop' -Concurrency 6
+.\youtube-mp3\Download-YouTubeMp3.ps1 -i .\data\pop-downloads.json -o "$HOME\Downloads\Music\Pop"
 ```
 
-`queue.json` is an array of reviewed video URLs:
+The input JSON is an array of reviewed video URLs:
 
 ```json
 [

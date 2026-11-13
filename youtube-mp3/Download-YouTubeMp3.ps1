@@ -3,12 +3,12 @@
 .SYNOPSIS
 Download a reviewed JSON queue of YouTube URLs as tagged MP3s.
 .EXAMPLE
-./Download-YouTubeMp3.ps1 ./queue.json ./music -Concurrency 6
+./Download-YouTubeMp3.ps1 -i ./queue.json -o ./music
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory, Position = 0)] [string] $InputFile,
-    [Parameter(Mandatory, Position = 1)] [string] $OutputDirectory,
+    [Parameter(Mandatory, Position = 0)] [Alias('i')] [string] $InputFile,
+    [Parameter(Mandatory, Position = 1)] [Alias('o')] [string] $OutputDirectory,
     [ValidateRange(1, 16)] [int] $Concurrency = 6,
     [ValidateRange(5, 600)] [int] $TimeoutSeconds = 60,
     [ValidateRange(0, 4)] [int] $NetworkRetries = 2,
@@ -28,7 +28,7 @@ function Resolve-Tool([string] $Name) {
         if (!(Test-Path -LiteralPath $Name -PathType Leaf)) { throw "Executable does not exist: $Name" }
         return (Get-Item -LiteralPath $Name).FullName
     }
-    $command = Get-Command $Name -CommandType Application -ErrorAction Ignore
+    $command = Get-Command $Name -CommandType Application -ErrorAction Ignore | Select-Object -First 1
     if ($command) { return $command.Source }
     # A running terminal may predate an installation's PATH update.
     $searchPath = @($env:PATH, [Environment]::GetEnvironmentVariable('PATH', 'User'),
