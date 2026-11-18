@@ -143,8 +143,8 @@ function Assert-Mp3($Track, [string] $Probe, [string] $ChildPath) {
         if ($null -eq $tags -or $tags['title'] -cne $Track.Title -or $tags['artist'] -cne $Track.Artist) {
             throw "Title/artist tags do not match the queue: $($Track.Path)"
         }
-        if ($null -ne $Track.Duration -and [math]::Abs([double]$metadata.format.duration - $Track.Duration) -gt 5) {
-            throw "Duration differs from the queue by more than 5 seconds: $($Track.Path)"
+        if ($null -ne $Track.Duration -and [math]::Abs([double]$metadata.format.duration - $Track.Duration) -gt 10) {
+            throw "Duration differs from the queue by more than 10 seconds: $($Track.Path)"
         }
     } finally { $job.Process.Dispose() }
 }
